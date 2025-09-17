@@ -6,22 +6,20 @@
   <title>Interactive Binomial p‑value Demo</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <style>
-    :root{
-      --bg:#0b0f14; --panel:#111821; --ink:#e8eef6; --muted:#9bb0c9; --accent:#3ba8ff; --accent-2:#7cdb90; --warn:#ff7b7b;
-    }
+    :root{ --bg:#0b0f14; --panel:#111821; --ink:#e8eef6; --muted:#9bb0c9; --accent:#3ba8ff; --accent-2:#7cdb90; --warn:#ff7b7b; }
     html,body{height:100%}
     body{margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,Apple Color Emoji,Segoe UI Emoji; background:var(--bg); color:var(--ink)}
     .wrap{max-width:1100px; margin:24px auto; padding:0 16px 40px}
     .header{display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px}
     h1{font-size:20px; margin:0; font-weight:700; letter-spacing:0.2px}
     .card{background:var(--panel); border:1px solid rgba(255,255,255,.06); border-radius:16px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.25)}
-    .controls{display:grid; grid-template-columns:repeat(6, minmax(120px, 1fr)); gap:12px}
+    .controls{display:grid; grid-template-columns:repeat(5, minmax(120px, 1fr)); gap:12px}
     .control{background:#0d131b; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:10px 12px}
     .control label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
     .control input[type="number"], .control select{width:100%}
     input, select{background:#0b1118; color:var(--ink); border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:8px 10px}
     .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
-    .pill{padding:8px 12px; border-radius:999px; background:#0b1118; border:1px solid rgba(255,255,255,.08); cursor:pointer; color: white}
+    .pill{padding:8px 12px; border-radius:999px; background:#0b1118; border:1px solid rgba(255,255,255,.08); cursor:pointer; color:#fff}
     .pill:hover{border-color:var(--accent)}
     .stat{display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-top:10px}
     .stat .box{background:#0d131b; border:1px solid rgba(255,255,255,.06); padding:10px; border-radius:12px}
@@ -32,9 +30,10 @@
     .help{color:var(--muted); font-size:13px; line-height:1.5}
     .footer{margin-top:16px; font-size:12px; color:var(--muted)}
     @media (max-width: 980px){ .controls{grid-template-columns:repeat(2, minmax(120px, 1fr))} }
-    canvas{width:100%; height:300px; max-height:600px}
+    canvas{width:100%; height:340px; max-height:640px}
     details{margin-top:16px}
     details pre{background:#0b1118; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:12px; overflow:auto}
+    .tiny{font-size:12px; color:var(--muted)}
   </style>
 </head>
 <body>
@@ -74,31 +73,24 @@
             <option value="right">Right‑tailed (H₁: p &gt; p₀)</option>
           </select>
         </div>
-        <div class="control">
-          <label>Continuity correction (normal)</label>
-          <select id="cc">
-            <option value="on">On</option>
-            <option value="off">Off</option>
-          </select>
-        </div>
       </div>
       <div class="stat">
-        <div class="box"><h3>Exact p‑value</h3><p id="pExact">—</p></div>
-        <div class="box"><h3>Normal approx p‑value</h3><p id="pNorm">—</p></div>
-        <div class="box"><h3>Critical region</h3><p id="crit">—</p></div>
+        <div class="box"><h3>Observed Z</h3><p id="zObs">—</p></div>
+        <div class="box"><h3>p‑value</h3><p id="pVal">—</p></div>
+        <div class="box"><h3>Critical Z</h3><p id="zCrit">—</p></div>
         <div class="box"><h3>Decision at α</h3><p id="decision">—</p></div>
       </div>
     </div>
 
     <div class="card">
       <div class="legend">
-        <span class="swatch" style="background:#3ba8ff"></span> Binomial PMF
         <span class="swatch" style="background:#7cdb90"></span> Normal curve (approx)
         <span class="swatch" style="background:#ff7b7b"></span> Rejection region(s)
+        <span class="swatch" style="background:#e8eef6"></span> Observed k
       </div>
-      <canvas id="chart" height="240"></canvas>
+      <canvas id="chart" height="260"></canvas>
       <div class="help" style="margin-top:8px">
-        This tool shows the exact binomial distribution for X∼Bin(n, p₀). Bars highlight the rejection region(s) for your chosen α and test. The line is the normal approximation using mean n·p₀ and variance n·p₀(1−p₀).
+        Visual shows the normal approximation to X∼Bin(n,p₀). Red shading marks rejection region(s) based on **Z cut‑offs** for your α and test. The white marker is your observed k placed at the normal height.
       </div>
     </div>
 
@@ -117,180 +109,104 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script>
-    // ---- Guard against enormous device pixel ratios or container sizes ----
-    var MAX_SAFE_CANVAS_AREA = 16 * 1024 * 1024; // 16,777,216 px² – conservative cross-browser cap
-    var MAX_DPR_CAP = 2; // limit internal canvas scaling
-    function getSafeDPR(canvas){
-      var cssW = canvas.clientWidth || 800;
-      var cssH = canvas.clientHeight || 300;
-      var dpr = Math.min((window.devicePixelRatio || 1), MAX_DPR_CAP);
-      var areaCap = Math.sqrt(MAX_SAFE_CANVAS_AREA / Math.max(1, cssW * cssH));
-      // ensure at least 1, cap by DPR and by area
-      return Math.max(1, Math.min(dpr, areaCap));
-    }
-
-    // Optionally set a global default (Chart.js reads this at construction time)
-    try { Chart.defaults.devicePixelRatio = Math.min((window.devicePixelRatio || 1), MAX_DPR_CAP); } catch(e) {}
-
-    // -------- Utilities: factorial logs for stable binomial --------
-    var logFact = [0]; // log(0!) = 0
-    function ensureLogFact(n){ for(var i=logFact.length; i<=n; i++) logFact[i] = logFact[i-1] + Math.log(i); }
-    function logChoose(n,k){ if(k<0||k>n) return -Infinity; ensureLogFact(n); return logFact[n] - logFact[k] - logFact[n-k]; }
-    function binomPMF(n,p,k){ if(p===0) return k===0 ? 1 : 0; if(p===1) return k===n ? 1 : 0; var ll = logChoose(n,k) + k*Math.log(p) + (n-k)*Math.log(1-p); return Math.exp(ll); }
-    function binomCDF(n,p,k){ if(k<0) return 0; if(k>=n) return 1; var s=0; for(var i=0;i<=k;i++) s += binomPMF(n,p,i); return Math.min(1, s); }
-    function binomSF(n,p,k){ if(k<=0) return 1; if(k>n) return 0; var s=0; for(var i=k;i<=n;i++) s += binomPMF(n,p,i); return Math.max(0, Math.min(1,s)); }
-
-    // Two‑sided exact p‑value via pmf‑threshold definition
-    function pTwoSidedExact(n,p0,k){ var pObs = binomPMF(n,p0,k); var s=0; for(var i=0;i<=n;i++){ var pi=binomPMF(n,p0,i); if(pi<=pObs+1e-15) s+=pi; } return Math.min(1, s); }
-
-    // Critical regions
-    function leftCritical(n,p0,alpha){ var K=-1; var cdf=0; for(var k=0;k<=n;k++){ cdf += binomPMF(n,p0,k); if(cdf<=alpha+1e-12) K=k; } return K; }
-    function rightCritical(n,p0,alpha){ var tail=0; var K; for(var k=n;k>=0;k--){ tail += binomPMF(n,p0,k); if(tail<=alpha+1e-12) { K=k; } } return (typeof K==='number') ? K : (n+1); }
-
-    // Normal approximation (optionally with continuity correction)
+    // ---- Normal utilities ----
+    function normalPDF(x, mu, sd){ var z=(x-mu)/sd; return Math.exp(-0.5*z*z)/(sd*Math.sqrt(2*Math.PI)); }
     function normalCDF(z){ var t = 1/(1+0.2316419*Math.abs(z)); var d = Math.exp(-0.5*z*z)/Math.sqrt(2*Math.PI); var p = 1 - d*(0.319381530*t - 0.356563782*Math.pow(t,2) + 1.781477937*Math.pow(t,3) - 1.821255978*Math.pow(t,4) + 1.330274429*Math.pow(t,5)); return z>=0 ? p : 1-p; }
-    function pValueNormal(n,p0,k,tail,cc){ if(cc===undefined) cc=true; var mu = n*p0, sd = Math.sqrt(n*p0*(1-p0)); if(sd===0){ return (k===mu?1:0); } var lo = (k-0.5-mu)/sd, hi = (k+0.5-mu)/sd; if(tail==='left') return normalCDF(cc?hi:(k-mu)/sd); if(tail==='right') return 1-normalCDF(cc?lo:(k-mu)/sd); var z = (k-mu)/sd; var p1 = normalCDF(z); var two = 2*Math.min(p1, 1-p1); var zm = (((k+0.5)+(k-0.5))/2 - mu)/sd; var p1cc = normalCDF(zm); var twoCC = 2*Math.min(p1cc, 1-p1cc); return cc?twoCC:two; }
+    function normalInv(p){ // Beasley‑Springer/Moro
+      if(p<=0||p>=1) return NaN; var a=[2.50662823884,-18.61500062529,41.39119773534,-25.44106049637], b=[-8.47351093090,23.08336743743,-21.06224101826,3.13082909833], c=[0.3374754822726147,0.9761690190917186,0.1607979714918209,0.0276438810333863,0.0038405729373609,0.0003951896511919,0.0000321767881768,0.0000002888167364,0.0000003960315187]; var x=p-0.5; if(Math.abs(x)<0.42){ var r=x*x; var num=a[0]+a[1]*r+a[2]*r*r+a[3]*r*r*r; var den=1+b[0]*r+b[1]*r*r+b[2]*r*r*r+b[3]*r*r*r*r; return x*num/den; } var r=p; if(x>0) r=1-p; r=Math.log(-Math.log(r)); var z=c[0]+r*(c[1]+r*(c[2]+r*(c[3]+r*(c[4]+r*(c[5]+r*(c[6]+r*(c[7]+r*c[8]))))))); return x<0?-z:z; }
 
-    // Chart setup
-    var ctx = document.getElementById('chart').getContext('2d');
+    var ctx=document.getElementById('chart').getContext('2d');
     var chart;
 
-    function fmtP(x){ if(!isFinite(x)) return '—'; if(x<1e-6) return x.toExponential(2); if(x<0.001) return x.toExponential(2); return x.toFixed(6).replace(/0+$/,'').replace(/\.$/,''); }
+    function fmt(x){ if(!isFinite(x)) return '—'; return (Math.abs(x)>=100? x.toFixed(1) : Math.abs(x)>=10? x.toFixed(2) : x.toFixed(3)); }
+    function fmtP(p){ if(!isFinite(p)) return '—'; if(p<1e-6) return p.toExponential(2); if(p<0.001) return p.toExponential(2); return p.toFixed(6).replace(/0+$/,'').replace(/\.$/,''); }
 
-    function buildDatasets(n, p0, kI, test){
-      // PMF across 0..n
-      var xs = Array.from({length:n+1}, function(_,i){ return i; });
-      var pmf = xs.map(function(i){ return binomPMF(n,p0,i); });
-
-      // Critical regions
-      var Kleft=-1, Kright=n+1;
-      if(test==='left')      Kleft  = leftCritical(n,p0,alpha);
-      else if(test==='right')Kright = rightCritical(n,p0,alpha);
-      else { Kleft = leftCritical(n,p0,alpha/2); Kright = rightCritical(n,p0,alpha/2); }
-
-      // Normal curve values
-      var mu = n*p0, sd = Math.sqrt(n*p0*(1-p0)) || 1;
-      var nx = 400, xNorm=[], yNorm=[]; var minX = -0.5, maxX = n+0.5;
-      for(var i=0;i<nx;i++){ var x = minX + (maxX-minX)*i/(nx-1); var z = (x-mu)/sd; var y = Math.exp(-0.5*z*z)/(sd*Math.sqrt(2*Math.PI)); xNorm.push(x); yNorm.push(y); }
-
-      var rejectMask = xs.map(function(i){ return ( (test==='left'  && i<=Kleft) || (test==='right' && i>=Kright) || (test==='two' && (i<=Kleft || i>=Kright)) ); });
-
-      var barColours = pmf.map(function(_,i){ return rejectMask[i] ? '#ff7b7b' : '#3ba8ff'; });
-
-      var datasets = [
-        { type:'bar',    label:'Binomial PMF', data: pmf, backgroundColor: barColours, borderWidth:0, parsing:false },
-        { type:'line',   label:'Normal approx', data: xNorm.map(function(x,idx){ return {x:x, y:yNorm[idx]}; }), parsing:false, borderColor:'#7cdb90', borderWidth:2, tension:0.15, pointRadius:0, yAxisID:'y2' },
-        { type:'scatter',label:'Observed k', data:[{x:kI, y:pmf[kI]}], parsing:false, pointRadius:6, pointBackgroundColor:'#e8eef6', pointBorderColor:'#e8eef6', showLine:false }
-      ];
-      return {xs: xs, pmf: pmf, Kleft: Kleft, Kright: Kright, datasets: datasets};
-    }
+    function buildCurves(n,p0){ var mu=n*p0, sd=Math.sqrt(n*p0*(1-p0))||1; var nx=600,x=[],y=[]; var minX=-0.5,maxX=n+0.5; for(var i=0;i<nx;i++){ var xi=minX+(maxX-minX)*i/(nx-1); x.push(xi); y.push(normalPDF(xi,mu,sd)); } return {x:x,y:y,mu:mu,sd:sd,minX:minX,maxX:maxX}; }
 
     function compute(){
-      var p0 = Math.max(0, Math.min(1, parseFloat(document.getElementById('p0').value)/100));
-      var n  = Math.max(1, Math.min(1000, parseInt(document.getElementById('n').value)));
-      var kI = Math.max(0, Math.min(n, parseInt(document.getElementById('k').value)));
-      var alpha = Math.max(1e-6, Math.min(0.5, parseFloat(document.getElementById('alpha').value)));
-      var test = document.getElementById('test').value;
-      var cc = document.getElementById('cc').value==='on';
-      document.getElementById('k').max = n;
+      var p0=Math.max(0,Math.min(1,parseFloat(document.getElementById('p0').value)/100));
+      var n=Math.max(1,Math.min(1000,parseInt(document.getElementById('n').value)));
+      var kI=Math.max(0,Math.min(n,parseInt(document.getElementById('k').value)));
+      var alpha=Math.max(1e-6,Math.min(0.5,parseFloat(document.getElementById('alpha').value)));
+      var test=document.getElementById('test').value;
 
-      // Build datasets & stats
-      var b = (function(){
-        // we need alpha inside buildDatasets – capture it here for simple closure
-        window.alpha = alpha; // (scoped helper; not user-facing)
-        return buildDatasets(n, p0, kI, test);
-      })();
+      var mu=n*p0, sd=Math.sqrt(n*p0*(1-p0));
+      var zObs=(kI-mu)/sd;
 
-      // Exact p‑value
-      var pExact = (test==='left') ? binomCDF(n,p0,kI) : (test==='right') ? binomSF(n,p0,kI) : pTwoSidedExact(n,p0,kI);
-      var pNorm  = pValueNormal(n,p0,kI, (test==='two'?'two':test), cc);
+      // Z criticals
+      var zL=null, zR=null;
+      if(test==='left'){ zL=normalInv(alpha); }
+      else if(test==='right'){ zR=normalInv(1-alpha); }
+      else { zL=normalInv(alpha/2); zR=normalInv(1-alpha/2); }
 
-      // Decision text
-      var reject=false; var critDesc='—';
-      if(test==='left'){ reject = (kI <= b.Kleft); critDesc = (b.Kleft>=0)? ('k ≤ ' + b.Kleft) : 'None (α too small)'; }
-      else if(test==='right'){ reject = (kI >= b.Kright); critDesc = (b.Kright<=n)? ('k ≥ ' + b.Kright) : 'None (α too small)'; }
-      else { var leftTxt = (b.Kleft>=0)? ('k ≤ ' + b.Kleft) : '—'; var rightTxt = (b.Kright<=n)? ('k ≥ ' + b.Kright) : '—'; reject = (kI<=b.Kleft) || (kI>=b.Kright); critDesc = leftTxt + '  or  ' + rightTxt; }
+      // p‑value from Z
+      var pVal;
+      if(test==='left')      pVal = normalCDF(zObs);
+      else if(test==='right') pVal = 1 - normalCDF(zObs);
+      else                    pVal = 2 * Math.min(normalCDF(zObs), 1 - normalCDF(zObs));
 
-      document.getElementById('pExact').textContent = fmtP(pExact);
-      document.getElementById('pNorm').textContent = fmtP(pNorm);
-      document.getElementById('crit').textContent = critDesc;
-      document.getElementById('decision').textContent = (reject? 'Reject H₀' : 'Do not reject');
+      // Update stats panel
+      document.getElementById('zObs').textContent = fmt(zObs);
+      var zCritText = (test==='two') ? ('±' + fmt(Math.abs(zL))) : (fmt(zL||zR));
+      document.getElementById('zCrit').textContent = zCritText;
+      document.getElementById('pVal').textContent = fmtP(pVal);
+      var reject=false;
+      if(test==='left')      reject = (zObs <= zL);
+      else if(test==='right') reject = (zObs >= zR);
+      else                    reject = (zObs <= zL) || (zObs >= zR);
+      document.getElementById('decision').textContent = reject? 'Reject H₀' : 'Do not reject';
 
-      // Safe DPR handling
-      var safeDPR = getSafeDPR(ctx.canvas);
+      // Build chart datasets (normal-only with Z cut‑off shading)
+      var c=buildCurves(n,p0); var x=c.x,y=c.y;
+      var xCutL = (zL!=null) ? (mu + sd*zL) : null;
+      var xCutR = (zR!=null) ? (mu + sd*zR) : null;
 
-      // Build chart config
-      var data = { labels: b.xs, datasets: b.datasets };
-      var options = {
-        responsive:true,
-        maintainAspectRatio:false,
-        devicePixelRatio: safeDPR,
-        animation:false,
-        scales:{
-          x:{ type:'linear', min:-0.5, max:n+0.5, grid:{ color:'rgba(255,255,255,.06)' }, ticks:{ stepSize:1, callback:function(v){ return Number.isInteger(v)? v: ''; } } },
-          y:{ beginAtZero:true, grid:{ color:'rgba(255,255,255,.06)' }, title:{ display:true, text:'Probability (pmf)' } },
-          y2:{ position:'right', display:false }
-        },
-        plugins:{ legend:{ labels:{ color:'#e8eef6' } }, tooltip:{ callbacks:{ label: function(ctx){ if(ctx.dataset.label==='Normal approx') return 'f(x) ≈ ' + ctx.raw.y.toFixed(4); if(ctx.dataset.label==='Observed k') return 'Observed k = ' + kI; var xi = (ctx.parsed && typeof ctx.parsed.x === 'number') ? ctx.parsed.x : ctx.dataIndex; var prob = (b.pmf[xi] != null) ? b.pmf[xi] : 0; return 'k=' + xi + ', P=' + prob.toFixed(6); } } } }
-      };
+      function maskLeft(xs,ys){ return xs.map(function(xi,i){ return (xCutL!=null && xi<=xCutL)? ys[i]:null; }); }
+      function maskRight(xs,ys){ return xs.map(function(xi,i){ return (xCutR!=null && xi>=xCutR)? ys[i]:null; }); }
+      var yLeft  = (test==='left'||test==='two') ? maskLeft(x,y)  : new Array(y.length).fill(null);
+      var yRight = (test==='right'||test==='two')? maskRight(x,y) : new Array(y.length).fill(null);
 
-      // Apply/update chart
-      if(chart){
-        chart.options.devicePixelRatio = safeDPR;
-        chart.data = data; chart.options = options; chart.resize(); chart.update();
-      } else {
-        chart = new Chart(ctx, {type:'bar', data: data, options: options});
-      }
+      var yk = normalPDF(kI, mu, sd);
 
-      // Update URL hash for sharing
-      var state = new URLSearchParams({p0:(p0*100).toString(), n:n, k:kI, alpha:alpha, test:test, cc: (cc?'1':'0')});
-      try { history.replaceState(null, '', '#' + state.toString()); } catch(e) {}
+      var datasets=[
+        {type:'line',label:'Normal approx',data:x.map(function(xi,idx){ return {x:xi,y:y[idx]};}),parsing:false,borderColor:'#7cdb90',borderWidth:2,tension:0.15,pointRadius:0,fill:false,yAxisID:'y'},
+        {type:'line',label:'Rejection (left)',data:x.map(function(xi,idx){ return {x:xi,y:yLeft[idx]};}),parsing:false,borderColor:'transparent',backgroundColor:'rgba(255,123,123,0.35)',fill:'origin',tension:0.15,pointRadius:0,yAxisID:'y',hidden:yLeft.every(function(v){return v===null;})},
+        {type:'line',label:'Rejection (right)',data:x.map(function(xi,idx){ return {x:xi,y:yRight[idx]};}),parsing:false,borderColor:'transparent',backgroundColor:'rgba(255,123,123,0.35)',fill:'origin',tension:0.15,pointRadius:0,yAxisID:'y',hidden:yRight.every(function(v){return v===null;})},
+        {type:'line',label:'Observed k',data:[{x:kI,y:0},{x:kI,y:yk}],parsing:false,borderColor:'#e8eef6',borderWidth:1.5,pointRadius:0,yAxisID:'y'},
+        {type:'scatter',label:'Observed k (point)',data:[{x:kI,y:yk}],parsing:false,pointRadius:6,pointBackgroundColor:'#e8eef6',pointBorderColor:'#e8eef6',showLine:false,yAxisID:'y'}
+      ];
+
+      var options={responsive:true,maintainAspectRatio:false,animation:false,scales:{x:{type:'linear',min:c.minX,max:c.maxX,grid:{color:'rgba(255,255,255,.06)'},ticks:{stepSize:1,callback:function(v){return Number.isInteger(v)? v : '';}},title:{display:true,text:'k (successes)'}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,.06)'},title:{display:true,text:'Probability density (normal approx)'}}},plugins:{legend:{labels:{color:'#e8eef6'}}}};
+
+      if(chart){ chart.data={datasets:datasets}; chart.options=options; chart.update(); }
+      else{ chart=new Chart(ctx,{type:'line',data:{datasets:datasets},options:options}); }
     }
 
-    // Load state from URL (if present)
-    function loadFromHash(){ if(!location.hash) return; var p = new URLSearchParams(location.hash.slice(1)); if(p.has('p0')) document.getElementById('p0').value = Number(p.get('p0')); if(p.has('n'))  document.getElementById('n').value  = Number(p.get('n')); if(p.has('k'))  document.getElementById('k').value  = Number(p.get('k')); if(p.has('alpha')) document.getElementById('alpha').value = Number(p.get('alpha')); if(p.has('test')) document.getElementById('test').value = p.get('test'); if(p.has('cc')) document.getElementById('cc').value = (p.get('cc')==='1')?'on':'off'; }
+    ['p0','n','k','alpha','test'].forEach(function(id){ document.getElementById(id).addEventListener('input',compute); document.getElementById(id).addEventListener('change',compute); });
 
-    // Self‑tests (no external libs)
+    document.getElementById('btnEx7').addEventListener('click',function(){ document.getElementById('p0').value=80; document.getElementById('n').value=10; document.getElementById('k').value=7; document.getElementById('alpha').value=0.05; document.getElementById('test').value='two'; compute(); });
+    document.getElementById('btnEx1').addEventListener('click',function(){ document.getElementById('p0').value=80; document.getElementById('n').value=10; document.getElementById('k').value=1; document.getElementById('alpha').value=0.05; document.getElementById('test').value='two'; compute(); });
+    document.getElementById('btnShare').addEventListener('click',function(){ try{ navigator.clipboard.writeText(location.href).then(function(){ alert('Link copied! Paste into a Notion embed.'); }); } catch(e){ alert('Copy failed. Manually copy the URL.'); } });
+
+    // --- Self‑tests ---
     function approxEq(a,b,eps){ return Math.abs(a-b) <= eps; }
     function log(line){ var el=document.getElementById('testlog'); el.textContent += '\n' + line; }
     function clearLog(){ var el=document.getElementById('testlog'); el.textContent=''; }
     function runTests(){
       clearLog(); var pass=true; function t(name, ok){ log((ok?'✅ ':'❌ ') + name); if(!ok) pass=false; }
-
-      // Existing tests (unchanged)
-      t('pmf(10,0.8,1) ≈ 4.096e-06', approxEq(binomPMF(10,0.8,1), 4.096e-06, 1e-10));
-      t('cdf(10,0.8,7) ≈ 0.3222004736', approxEq(binomCDF(10,0.8,7), 0.3222004736, 1e-12));
-      t('pTwoSidedExact(10,0.8,7) ≈ 0.429574656', approxEq(pTwoSidedExact(10,0.8,7), 0.429574656, 5e-13));
-      t('pTwoSidedExact(10,0.8,1) ≈ 4.1984e-06', approxEq(pTwoSidedExact(10,0.8,1), 4.1984e-06, 1e-12));
-      t('leftCritical(10,0.8,0.05) = 5', leftCritical(10,0.8,0.05) === 5);
-      t('leftCritical(10,0.8,0.025) = 4', leftCritical(10,0.8,0.025) === 4);
-      t('rightCritical(10,0.8,0.025) = 11', rightCritical(10,0.8,0.025) === 11);
-      t('pmf(10,1,10)=1', binomPMF(10,1,10) === 1);
-      t('pmf(10,0,0)=1', binomPMF(10,0,0) === 1);
-
-      // Additional tests
-      // 8) PMF sums to ~1
-      var s=0; for(var i=0;i<=10;i++) s+=binomPMF(10,0.8,i); t('∑ pmf(10,0.8,k) ≈ 1', approxEq(s,1,1e-12));
-      // 9) Survival vs CDF identity: P(X≥k) = 1 - P(X≤k-1)
-      t('sf ≈ 1 - cdf(k-1)', approxEq(binomSF(10,0.8,6), 1 - binomCDF(10,0.8,5), 1e-12));
-      // 10) CDF at n is 1
-      t('cdf(10,0.8,10) = 1', binomCDF(10,0.8,10) === 1);
-
+      // Sanity: n=10, p0=0.8, k=7 → z ≈ -0.7906; two‑sided p ≈ 0.4298
+      var n1=10,p01=0.8,k1=7, mu1=n1*p01, sd1=Math.sqrt(n1*p01*(1-p01));
+      var z1=(k1-mu1)/sd1; var p1=2*Math.min(normalCDF(z1),1-normalCDF(z1));
+      t('z(10,0.8,7) ≈ -0.791', approxEq(z1,-0.7906,1e-3));
+      t('two‑sided p ≈ 0.43', approxEq(p1,0.4298,5e-3));
+      // Sanity: n=10, p0=0.8, k=1 → very small p
+      var k2=1; var z2=(k2-mu1)/sd1; var p2=2*Math.min(normalCDF(z2),1-normalCDF(z2));
+      t('two‑sided p(1) small', p2 < 1e-6);
       log('\n' + (pass? 'All tests passed ✅' : 'Some tests failed ❌'));
     }
 
-    // Wire up controls
-    ;['p0','n','k','alpha','test','cc'].forEach(function(id){ document.getElementById(id).addEventListener('input', compute); document.getElementById(id).addEventListener('change', compute); });
-
-    document.getElementById('btnEx7').addEventListener('click', function(){ document.getElementById('p0').value = 80; document.getElementById('n').value = 10; document.getElementById('k').value = 7; document.getElementById('alpha').value = 0.05; document.getElementById('test').value='two'; compute(); });
-    document.getElementById('btnEx1').addEventListener('click', function(){ document.getElementById('p0').value = 80; document.getElementById('n').value = 10; document.getElementById('k').value = 1; document.getElementById('alpha').value = 0.05; document.getElementById('test').value='two'; compute(); });
-    document.getElementById('btnShare').addEventListener('click', function(){ try{ navigator.clipboard.writeText(location.href).then(function(){ alert('Link copied! Paste into a Notion embed.'); }); } catch(e){ alert('Copy failed. Manually copy the URL.'); } });
-
     document.getElementById('btnRerun').addEventListener('click', runTests);
 
-    window.addEventListener('resize', compute);
-
-    loadFromHash();
     compute();
     runTests();
   </script>
